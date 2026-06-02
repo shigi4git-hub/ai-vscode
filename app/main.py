@@ -1,7 +1,9 @@
 from fastapi import FastAPI      # FastAPIを使えるようにする
-# from pydantic import BaseModel   # Pydanticを使えるようにする
 from pydantic import BaseModel, Field   # Fieldを使えるようにする（バリデーションのため）
 from fastapi.responses import JSONResponse  # JSONレスポンスを使用
+
+from database import Session
+from models.item import Item
 
 app = FastAPI()                 # APIサーバーを作成
 
@@ -18,14 +20,23 @@ def health_check():              # そのURLにアクセスされた時に実行
 # POST /itemsエンドポイント
 @app.post("/items")              # POSTリクエストを受け取るURL
 def create_item(item: ItemCreate):  # リクエストボディからItemCreateモデルを取得
-    # アイテムを作成してレスポンスを返す
+    db = Session()
+    try:
+        db_item = Item(title=item.title, body=item.body)
+        db.add(db_item)
+        db.commit()
+        db.refresh(db_item)
+    finally:
+        db.close()
+
     return JSONResponse(
-        status_code=201,         # ステータスコード201（Created）
+        status_code=201,
         content={
-            "message": "Item created",  # 作成成功メッセージ
-            "item": {                   # 作成されたアイテムを返す
-                "title": item.title,
-                "body": item.body
-            }
-        }
+            "message": "Item created",
+            "item": {
+                "id": db_item.id,
+                "title": db_item.title,
+                "body": db_item.body,
+            },
+        },
     )
