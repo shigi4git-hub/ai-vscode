@@ -1,11 +1,21 @@
+from pathlib import Path
+
 from fastapi import FastAPI      # FastAPIを使えるようにする
+from fastapi.responses import FileResponse, JSONResponse  # JSONレスポンスと静的ファイル配信を使用
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field   # Fieldを使えるようにする（バリデーションのため）
-from fastapi.responses import JSONResponse  # JSONレスポンスを使用
 
 from database import Session
 from models.item import Item
 
+API_URL = "http://127.0.0.1:8000"
+
 app = FastAPI()                 # APIサーバーを作成
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+@app.get("/")
+def read_root():
+    return FileResponse(Path("static") / "index.html")
 
 # アイテム作成用のPydanticモデルを定義
 class ItemCreate(BaseModel):
