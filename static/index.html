@@ -19,9 +19,45 @@
         <button type="submit">送信</button>
     </form>
 
+    <div id="status" role="status" aria-live="polite" style="margin-top: 1em;"></div>
+    <h2>投稿一覧</h2>
+    <div id="items-container"></div>
+
     <script>
         const API_URL = "http://127.0.0.1:8000";
         const form = document.getElementById("item-form");
+        const statusElement = document.getElementById("status");
+        const itemsContainer = document.getElementById("items-container");
+
+        async function fetchItems() {
+            statusElement.textContent = "読み込み中...";
+            itemsContainer.innerHTML = "";
+
+            try {
+                const response = await fetch(`${API_URL}/items`);
+                if (!response.ok) {
+                    throw new Error("fetch failed");
+                }
+
+                const items = await response.json();
+                statusElement.textContent = "";
+
+                if (!Array.isArray(items) || items.length === 0) {
+                    itemsContainer.textContent = "投稿がありません。";
+                    return;
+                }
+
+                const list = document.createElement("ul");
+                items.forEach((item) => {
+                    const li = document.createElement("li");
+                    li.innerHTML = `ID: ${item.id} <strong>${item.title}</strong><br />${item.body}`;
+                    list.appendChild(li);
+                });
+                itemsContainer.appendChild(list);
+            } catch (error) {
+                statusElement.textContent = "データの取得に失敗しました";
+            }
+        }
 
         form.addEventListener("submit", async (event) => {
             event.preventDefault();
@@ -45,10 +81,13 @@
 
                 alert("投稿しました");
                 form.reset();
+                await fetchItems();
             } catch (error) {
                 alert(error.message || "送信に失敗しました");
             }
         });
+
+        fetchItems();
     </script>
 </body>
 </html>

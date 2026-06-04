@@ -25,7 +25,23 @@ class ItemCreate(BaseModel):
 
 @app.get("/health")              # GETリクエストを受け取るURL
 def health_check():              # そのURLにアクセスされた時に実行される関数
-    return {"status": "ok"}     # レスポンスとして返すデータ
+    return {"status": "ok"}     # レスポンスとして返すデータ 
+
+@app.get("/items")
+def read_items():
+    db = Session()
+    try:
+        items = db.query(Item).order_by(Item.id).all()
+        return [
+            {
+                "id": item.id,
+                "title": item.title,
+                "body": item.body,
+            }
+            for item in items
+        ]
+    finally:
+        db.close()
 
 # POST /itemsエンドポイント
 @app.post("/items")              # POSTリクエストを受け取るURL
