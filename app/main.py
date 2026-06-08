@@ -1,21 +1,46 @@
 from pathlib import Path
+from datetime import datetime, timedelta
 
 from fastapi import FastAPI, HTTPException      # FastAPIを使えるようにする
 from fastapi.responses import FileResponse, JSONResponse  # JSONレスポンスと静的ファイル配信を使用
 from fastapi.staticfiles import StaticFiles
 from passlib.context import CryptContext
 from pydantic import BaseModel, Field   # Fieldを使えるようにする（バリデーションのため）
+from jose import jwt
 
 from database import Session
 from models.item import Item
 from models.user import User
 
+SECRET_KEY = "secret-key-change-this"
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 30
 API_URL = "http://127.0.0.1:8000"
 
 app = FastAPI()                 # APIサーバーを作成
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")  # bcryptでハッシュ化するためのコンテキスト
+
+
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    return pwd_context.verify(plain_password, hashed_password)
+
+
+def authenticate_user(db, username: str, password: str):
+    user = db.query(User).filter(User.username == username).first()
+    if not user:
+        return None
+    if not verify_password(password, user.hashed_password):
+        return None
+    return user
+
+
+def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:
+    to_encode = data.copy()
+    expire = datetime.utcnow() + (expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
+    to_encode.update({"exp": expire})
+    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
 @app.get("/")
 def read_root():
@@ -32,7 +57,12 @@ class UserCreate(BaseModel):
     username: str = Field(min_length=1)  # ユーザー名は空文字を許可しない
     password: str = Field(min_length=1)  # パスワードも空文字を許可しない
 
-@app.get("/health")              # GETリクエストを受け取るURL
+# ログイン用のPydanticモデルを定義
+class LoginRequest(BaseModel):
+    username: str = Field(min_length=1)
+    password: str = Field(min_length=1)
+
+@app.get("/health")              # GETリクエストを受け取るURL 
 def health_check():              # そのURLにアクセスされた時に実行される関数
     return {"status": "ok"}     # レスポンスとして返すデータ 
 
@@ -79,6 +109,24 @@ def register_user(user: UserCreate):
             },
         },
     )
+
+# POST /auth/loginエンドポイント
+@app.post("/auth/login")
+def login(user: LoginRequest):
+    db = Session()
+    try:
+        db_user = authenticate_user(db, user.username, user.password)
+        if not db_user:
+            raise HTTPException(status_code=401, detail="Invalid username or password")
+
+        access_token = create_access_token(data={"sub": db_user.username})
+    finally:
+        db.close()
+
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+    }
 
 # POST /itemsエンドポイント
 @app.post("/items")              # POSTリクエストを受け取るURL
