@@ -7,17 +7,36 @@
 </head>
 <body>
     <h1>投稿フォーム</h1>
-    <form id="item-form">
+
+    <!-- ログイン用フォーム。username と password を送信して JWT を取得する -->
+    <form id="login-form" style="margin-bottom: 1.5em;">
         <div>
-            <label for="title">タイトル</label><br />
-            <input type="text" id="title" name="title" required />
+            <label for="login-username">ユーザー名</label><br />
+            <input type="text" id="login-username" name="username" required />
         </div>
         <div>
-            <label for="body">本文</label><br />
-            <textarea id="body" name="body" rows="5" required></textarea>
+            <label for="login-password">パスワード</label><br />
+            <input type="password" id="login-password" name="password" required />
         </div>
-        <button type="submit">送信</button>
+        <button type="submit">ログイン</button>
     </form>
+
+    <div id="auth-status" role="status" aria-live="polite" style="margin-bottom: 1em;"></div>
+
+    <!-- 未ログイン時は投稿フォームを非表示にする -->
+    <div id="item-form-container" style="display: none;">
+        <form id="item-form">
+            <div>
+                <label for="title">タイトル</label><br />
+                <input type="text" id="title" name="title" required />
+            </div>
+            <div>
+                <label for="body">本文</label><br />
+                <textarea id="body" name="body" rows="5" required></textarea>
+            </div>
+            <button type="submit">送信</button>
+        </form>
+    </div>
 
     <div id="status" role="status" aria-live="polite" style="margin-top: 1em;"></div>
     <h2>投稿一覧</h2>
@@ -25,9 +44,24 @@
 
     <script>
         const API_URL = "http://127.0.0.1:8000";
+        const STORAGE_KEY = "access_token";
+        const loginForm = document.getElementById("login-form");
+        const authStatusElement = document.getElementById("auth-status");
+        const itemFormContainer = document.getElementById("item-form-container");
         const form = document.getElementById("item-form");
         const statusElement = document.getElementById("status");
         const itemsContainer = document.getElementById("items-container");
+
+        function getToken() {
+            return localStorage.getItem(STORAGE_KEY);
+        }
+
+        function setAuthenticatedUI(isAuthenticated) {
+            itemFormContainer.style.display = isAuthenticated ? "block" : "none";
+            authStatusElement.textContent = isAuthenticated
+                ? "ログイン済みです。投稿できます。"
+                : "ログインすると投稿フォームが表示されます。";
+        }
 
         async function fetchItems() {
             statusElement.textContent = "読み込み中...";
@@ -59,17 +93,59 @@
             }
         }
 
+        loginForm.addEventListener("submit", async (event) => {
+            event.preventDefault();
+
+            const username = document.getElementById("login-username").value.trim();
+            const password = document.getElementById("login-password").value;
+
+            try {
+                const response = await fetch(`${API_URL}/auth/login`, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/x-www-form-urlencoded",
+                    },
+                    body: new URLSearchParams({ username, password }).toString(),
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.detail || "ログインに失敗しました");
+                }
+
+                const data = await response.json();
+                if (!data.access_token) {
+                    throw new Error("トークンが取得できませんでした");
+                }
+
+                // JWT を localStorage に保存する
+                localStorage.setItem(STORAGE_KEY, data.access_token);
+                setAuthenticatedUI(true);
+                loginForm.reset();
+                authStatusElement.textContent = "ログインしました。";
+            } catch (error) {
+                authStatusElement.textContent = error.message || "ログインに失敗しました";
+            }
+        });
+
         form.addEventListener("submit", async (event) => {
             event.preventDefault();
 
             const title = document.getElementById("title").value.trim();
             const body = document.getElementById("body").value.trim();
+            const token = getToken();
+
+            if (!token) {
+                authStatusElement.textContent = "ログインしてください。";
+                return;
+            }
 
             try {
                 const response = await fetch(`${API_URL}/items`, {
                     method: "POST",
                     headers: {
                         "Content-Type": "application/json",
+                        "Authorization": `Bearer ${token}`,
                     },
                     body: JSON.stringify({ title, body }),
                 });
@@ -87,6 +163,8 @@
             }
         });
 
+        // ページ読み込み時にトークンの有無で投稿フォームを切り替える
+        setAuthenticatedUI(Boolean(getToken()));
         fetchItems();
     </script>
 </body>

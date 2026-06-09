@@ -1,12 +1,13 @@
 from pathlib import Path
 from datetime import datetime, timedelta
 
-from fastapi import FastAPI, HTTPException      # FastAPIを使えるようにする
+from fastapi import Depends, FastAPI, HTTPException, status      # FastAPIを使えるようにする
 from fastapi.responses import FileResponse, JSONResponse  # JSONレスポンスと静的ファイル配信を使用
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi.staticfiles import StaticFiles
 from passlib.context import CryptContext
 from pydantic import BaseModel, Field   # Fieldを使えるようにする（バリデーションのため）
-from jose import jwt
+from jose import ExpiredSignatureError, JWTError, jwt
 
 from database import Session
 from models.item import Item
@@ -20,6 +21,9 @@ API_URL = "http://127.0.0.1:8000"
 app = FastAPI()                 # APIサーバーを作成
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
+# Swagger の Authorize ボタンと OAuth2 認証フローを有効にするための設定
+# tokenUrl は Swagger からトークン取得を行うログインエンドポイントを指す
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")  # bcryptでハッシュ化するためのコンテキスト
 
 
@@ -42,6 +46,53 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None) -> s
     to_encode.update({"exp": expire})
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
+
+def get_current_user(token: str | None = Depends(oauth2_scheme)):
+    """
+    OAuth2 の Bearer トークンを検証し、ログイン済みユーザーを返す。
+    トークンがない、無効、または期限切れの場合は 401 を返す。
+    """
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+        )
+
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        username: str | None = payload.get("sub")
+    except ExpiredSignatureError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token has expired",
+        ) from exc
+    except JWTError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication credentials",
+        ) from exc
+
+    if username is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication credentials",
+        )
+
+    db = Session()
+    try:
+        user = db.query(User).filter(User.username == username).first()
+    finally:
+        db.close()
+
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User not found",
+        )
+
+    return user
+
+
 @app.get("/")
 def read_root():
     return FileResponse(Path("static") / "index.html")
@@ -56,11 +107,6 @@ class ItemCreate(BaseModel):
 class UserCreate(BaseModel):
     username: str = Field(min_length=1)  # ユーザー名は空文字を許可しない
     password: str = Field(min_length=1)  # パスワードも空文字を許可しない
-
-# ログイン用のPydanticモデルを定義
-class LoginRequest(BaseModel):
-    username: str = Field(min_length=1)
-    password: str = Field(min_length=1)
 
 @app.get("/health")              # GETリクエストを受け取るURL 
 def health_check():              # そのURLにアクセスされた時に実行される関数
@@ -111,11 +157,13 @@ def register_user(user: UserCreate):
     )
 
 # POST /auth/loginエンドポイント
+# Swagger / OAuth2 の Authorize ボタンから送信される標準フォーム形式で受け取る
 @app.post("/auth/login")
-def login(user: LoginRequest):
+def login(form_data: OAuth2PasswordRequestForm = Depends()):
     db = Session()
     try:
-        db_user = authenticate_user(db, user.username, user.password)
+        # OAuth2PasswordRequestForm では username / password が form_data から取得できる
+        db_user = authenticate_user(db, form_data.username, form_data.password)
         if not db_user:
             raise HTTPException(status_code=401, detail="Invalid username or password")
 
@@ -130,7 +178,11 @@ def login(user: LoginRequest):
 
 # POST /itemsエンドポイント
 @app.post("/items")              # POSTリクエストを受け取るURL
-def create_item(item: ItemCreate):  # リクエストボディからItemCreateモデルを取得
+def create_item(
+    item: ItemCreate,
+    current_user: User = Depends(get_current_user),  # ログイン済みユーザーであることを要求
+):  # リクエストボディからItemCreateモデルを取得
+    # current_user が取得できた時点で認証済みとみなす
     db = Session()
     try:
         db_item = Item(title=item.title, body=item.body)
