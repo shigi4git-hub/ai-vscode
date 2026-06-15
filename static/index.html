@@ -4,6 +4,41 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>投稿フォーム</title>
+    <style>
+        /* ストリーミング処理中のローディングアニメーション */
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .loading-spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #3498db;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-right: 10px;
+        }
+
+        .stream-result {
+            margin-top: 1em;
+            padding: 1em;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            background-color: #f9f9f9;
+            max-height: 400px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            display: none;
+        }
+
+        .stream-result.active {
+            display: block;
+        }
+    </style>
 </head>
 <body>
     <h1>投稿フォーム</h1>
@@ -39,6 +74,20 @@
     </div>
 
     <div id="status" role="status" aria-live="polite" style="margin-top: 1em;"></div>
+
+    <!-- ストリーミング確認用セクション -->
+    <div id="stream-section" style="margin-top: 2em; padding: 1em; border: 1px solid #ccc; border-radius: 5px; display: none;">
+        <h3>ストリーミング確認</h3>
+        <p>最初の投稿（ID: 1）の内容をAIに分析させてストリーミングで結果を表示します。</p>
+        <button type="button" id="stream-button">ストリーミング確認</button>
+        
+        <!-- ストリーミング処理中のステータス表示 -->
+        <div id="stream-status" style="margin-top: 1em;"></div>
+        
+        <!-- ストリーミング結果の表示エリア -->
+        <div id="stream-result" class="stream-result"></div>
+    </div>
+
     <h2>投稿一覧</h2>
     <div id="items-container"></div>
 
@@ -51,6 +100,12 @@
         const form = document.getElementById("item-form");
         const statusElement = document.getElementById("status");
         const itemsContainer = document.getElementById("items-container");
+        
+        // ストリーミング関連のDOM要素
+        const streamSection = document.getElementById("stream-section");
+        const streamButton = document.getElementById("stream-button");
+        const streamStatusElement = document.getElementById("stream-status");
+        const streamResultElement = document.getElementById("stream-result");
 
         function getToken() {
             return localStorage.getItem(STORAGE_KEY);
@@ -58,6 +113,8 @@
 
         function setAuthenticatedUI(isAuthenticated) {
             itemFormContainer.style.display = isAuthenticated ? "block" : "none";
+            // ストリーミングセクションもログイン時に表示
+            streamSection.style.display = isAuthenticated ? "block" : "none";
             authStatusElement.textContent = isAuthenticated
                 ? "ログイン済みです。投稿できます。"
                 : "ログインすると投稿フォームが表示されます。";
@@ -92,6 +149,112 @@
                 statusElement.textContent = "データの取得に失敗しました";
             }
         }
+
+        /**
+         * ストリーミングエンドポイントを呼び出し、
+         * OpenAI API のレスポンスをリアルタイムで画面に表示する関数
+         * 
+         * @param {number} itemId - ストリーミング対象のアイテムID
+         */
+        async function streamItemAnalysis(itemId) {
+            // UI を更新：結果表示エリアをリセット
+            streamResultElement.textContent = "";
+            streamResultElement.classList.add("active");
+            
+            // ローディングアニメーション付きのステータス表示
+            streamStatusElement.innerHTML = '<div class="loading-spinner"></div>生成中...';
+            streamButton.disabled = true;
+
+            try {
+                // GET /items/stream?item_id={itemId} を fetch で呼び出す
+                const response = await fetch(`${API_URL}/items/stream?item_id=${itemId}`);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                // response.body から ReadableStream を取得
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = ""; // SSE フォーマットの未処理バッファ
+
+                // チャンク単位でループして受信
+                while (true) {
+                    const { done, value } = await reader.read();
+                    
+                    if (done) {
+                        // ストリーミング終了
+                        break;
+                    }
+
+                    // バイト列をテキストにデコード
+                    const chunk = decoder.decode(value, { stream: true });
+                    buffer += chunk;
+
+                    // SSE フォーマットを解析
+                    // "data: {...}\n\n" という形式なので、"\n\n" で分割
+                    const lines = buffer.split("\n\n");
+
+                    // 最後の要素は不完全な可能性があるのでバッファに残す
+                    buffer = lines[lines.length - 1];
+
+                    // 完全なイベントを処理
+                    for (let i = 0; i < lines.length - 1; i++) {
+                        const line = lines[i].trim();
+                        if (line.startsWith("data: ")) {
+                            // "data: " プレフィックスを削除して JSON パース
+                            const jsonStr = line.slice(6); // "data: " = 6文字
+                            try {
+                                const event = JSON.parse(jsonStr);
+
+                                // イベントタイプに応じて処理
+                                if (event.type === "chunk" && event.content) {
+                                    // テキストチャンクを画面に追加
+                                    streamResultElement.textContent += event.content;
+                                    // 最新の内容にスクロール
+                                    streamResultElement.scrollTop = streamResultElement.scrollHeight;
+                                } else if (event.type === "done") {
+                                    // ストリーミング完了
+                                    console.log("Stream completed");
+                                } else if (event.type === "error") {
+                                    // エラーイベント
+                                    throw new Error(event.error || "Unknown streaming error");
+                                }
+                            } catch (parseError) {
+                                console.error("JSON parse error:", parseError, "Line:", jsonStr);
+                            }
+                        }
+                    }
+                }
+
+                // ストリーミング完了後、ステータスを更新
+                streamStatusElement.textContent = "完了しました！";
+                streamStatusElement.style.color = "green";
+
+                // 2秒後にアニメーションを消す
+                setTimeout(() => {
+                    streamStatusElement.textContent = "";
+                    streamStatusElement.style.color = "";
+                }, 2000);
+
+            } catch (error) {
+                // エラーが発生した場合
+                streamResultElement.textContent = `エラーが発生しました: ${error.message}`;
+                streamResultElement.style.color = "red";
+                streamStatusElement.textContent = `エラー: ${error.message}`;
+                streamStatusElement.style.color = "red";
+                console.error("Streaming error:", error);
+            } finally {
+                // ボタンを再度有効化
+                streamButton.disabled = false;
+            }
+        }
+
+        // ストリーミングボタンのクリックイベントハンドラー
+        streamButton.addEventListener("click", async () => {
+            // item_id=1 でストリーミング処理を実行
+            await streamItemAnalysis(1);
+        });
 
         loginForm.addEventListener("submit", async (event) => {
             event.preventDefault();
