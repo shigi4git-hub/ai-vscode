@@ -18,7 +18,9 @@ from dotenv import load_dotenv
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_community.vectorstores import FAISS
-from langchain_openai import OpenAIEmbeddings
+from langchain_openai import OpenAIEmbeddings, ChatOpenAI
+from langchain_core.prompts import PromptTemplate
+from langchain_core.output_parsers import StrOutputParser
 
 # ─────────────────────────────────────────────────────────
 # 0. 環境変数の読み込み
@@ -155,6 +157,125 @@ def similarity_search(vectorstore: FAISS, query: str, k: int = TOP_K) -> None:
         preview = doc.page_content[:200].replace("\n", " ")
         print(f"  ── Rank {rank} (source={Path(source).name}, page={page}) ──")
         print(f"  {preview}\n")
+
+
+# ─────────────────────────────────────────────────────────
+# 5. 保存済み FAISS インデックスの読み込み
+# ─────────────────────────────────────────────────────────
+def load_faiss_index() -> FAISS:
+    """
+    ローカルに保存されている FAISS インデックスを読み込んで返す。
+    インデックスが見つからない場合はエラーを出力して None を返す。
+    """
+    if not INDEX_DIR.exists():
+        print(f"[ERROR] FAISS インデックスが見つかりません: {INDEX_DIR}")
+        print("  先に python rag/rag_pipeline.py を実行してインデックスを作成してください。")
+        return None
+
+    # 埋め込みモデルを指定して FAISS インデックスを読み込む
+    embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
+    vectorstore = FAISS.load_local(
+        str(INDEX_DIR),
+        embeddings,
+        allow_dangerous_deserialization=True
+    )
+    return vectorstore
+
+
+# ─────────────────────────────────────────────────────────
+# 6. RAG での回答生成（引用元情報付き）
+# ─────────────────────────────────────────────────────────
+def rag_with_sources(query: str, k: int = 3) -> dict:
+    """
+    質問に対して RAG により回答を生成し、引用元の chunk 情報を含めて返す。
+
+    Args:
+        query: ユーザーからの質問
+        k: 類似検索で取得するチャンク数（デフォルト 3）
+
+    Returns:
+        {
+            "answer": "生成された回答テキスト",
+            "sources": [
+                {
+                    "source": "ファイル名",
+                    "page": ページ番号,
+                    "content_preview": "内容の冒頭（最初 200 文字）"
+                },
+                ...
+            ]
+        }
+    """
+    # ステップ 1: FAISS インデックスを読み込む
+    vectorstore = load_faiss_index()
+    if vectorstore is None:
+        return {
+            "answer": "エラー: FAISS インデックスが利用できません。",
+            "sources": []
+        }
+
+    # ステップ 2: 類似検索で関連チャンクを取得
+    retrieved_docs = vectorstore.similarity_search(query, k=k)
+
+    # ステップ 3: コンテキストを組立（複数チャンクのテキストを統合）
+    context_text = "\n\n".join(
+        [doc.page_content for doc in retrieved_docs]
+    )
+
+    # ステップ 4: LLM にプロンプトを構築して回答生成
+    # 根拠なしの情報は答えないようにプロンプトで指示
+    prompt_template = PromptTemplate(
+        input_variables=["context", "question"],
+        template="""あなたは PDF ドキュメント内容に基づいて質問に答える AI アシスタントです。
+
+【ルール】
+- 以下の「コンテキスト」の内容のみを根拠に答えてください
+- コンテキストに含まれていない情報は答えないでください
+- 「わかりません」や「記載されていません」と明確に答えてください
+
+【コンテキスト】
+{context}
+
+【質問】
+{question}
+
+【回答】
+"""
+    )
+
+    # LLM の初期化（OpenAI GPT-4o-mini を使用）
+    llm = ChatOpenAI(
+        model="gpt-4o-mini",
+        temperature=0.3,  # 回答の安定性を重視
+        max_tokens=1000
+    )
+
+    # LangChain パイプライン: prompt → llm → output_parser
+    chain = prompt_template | llm | StrOutputParser()
+
+    # LLM に質問を投げて回答を生成
+    answer = chain.invoke({
+        "context": context_text,
+        "question": query
+    })
+
+    # ステップ 5: 引用元情報を整理（source, page, 内容プレビュー）
+    sources = []
+    for doc in retrieved_docs:
+        source_name = Path(doc.metadata.get("source", "不明")).name
+        page_num = doc.metadata.get("page", "?")
+        content_preview = doc.page_content[:200].replace("\n", " ")
+
+        sources.append({
+            "source": source_name,
+            "page": page_num,
+            "content_preview": content_preview
+        })
+
+    return {
+        "answer": answer,
+        "sources": sources
+    }
 
 
 # ─────────────────────────────────────────────────────────

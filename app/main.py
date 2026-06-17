@@ -6,6 +6,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.routers import auth as auth_router
 from app.routers import items as items_router
+from app.routers import qa as qa_router
 
 app = FastAPI()  # API サーバーを作成
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -13,6 +14,7 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 # ルーターを登録して、エンドポイントを分割したモジュールから読み込む。
 app.include_router(auth_router.router)
 app.include_router(items_router.router)
+app.include_router(qa_router.router)
 
 
 @app.get("/")
