@@ -14,6 +14,7 @@ import re
 import sys
 from pathlib import Path
 
+import yaml
 from dotenv import load_dotenv
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import PyPDFLoader
@@ -41,6 +42,30 @@ TOP_K = 3            # 類似検索で取得する上位件数
 
 # 類似検索に使うクエリ（PDF の内容に合わせて変更してください）
 SEARCH_QUERY = "このドキュメントの主要なトピックは何ですか？"
+
+# YAML プロンプトファイルパス
+QA_PROMPT_YAML = ROOT_DIR / "prompts" / "qa_prompt_v1.yaml"
+
+
+# ─────────────────────────────────────────────────────────
+# YAML ファイル読み込み関数
+# ─────────────────────────────────────────────────────────
+def load_qa_prompt_yaml(yaml_path: Path) -> dict:
+    """
+    YAML ファイルから QA プロンプト設定を読み込んで返す。
+    ファイルが見つからない場合は None を返す。
+    """
+    if not yaml_path.exists():
+        print(f"[WARNING] プロンプト YAML が見つかりません: {yaml_path}")
+        return None
+    
+    try:
+        with open(yaml_path, 'r', encoding='utf-8') as f:
+            config = yaml.safe_load(f)
+        return config.get("prompt", {})
+    except Exception as e:
+        print(f"[ERROR] YAML 読み込み失敗: {e}")
+        return None
 
 
 # ─────────────────────────────────────────────────────────
@@ -188,6 +213,7 @@ def load_faiss_index() -> FAISS:
 def rag_with_sources(query: str, k: int = 3) -> dict:
     """
     質問に対して RAG により回答を生成し、引用元の chunk 情報を含めて返す。
+    プロンプトテンプレートは YAML ファイルから読み込む。
 
     Args:
         query: ユーザーからの質問
@@ -222,11 +248,20 @@ def rag_with_sources(query: str, k: int = 3) -> dict:
         [doc.page_content for doc in retrieved_docs]
     )
 
-    # ステップ 4: LLM にプロンプトを構築して回答生成
-    # 根拠なしの情報は答えないようにプロンプトで指示
-    prompt_template = PromptTemplate(
-        input_variables=["context", "question"],
-        template="""あなたは PDF ドキュメント内容に基づいて質問に答える AI アシスタントです。
+    # ステップ 4: YAML からプロンプトテンプレートを読み込む
+    # YAML が見つからない場合は、デフォルトのプロンプトを使用
+    prompt_config = load_qa_prompt_yaml(QA_PROMPT_YAML)
+    
+    if prompt_config:
+        # YAML からテンプレートと LLM パラメータを取得
+        template = prompt_config.get("template", "")
+        llm_config = prompt_config.get("llm_config", {})
+        model = llm_config.get("model", "gpt-4o-mini")
+        temperature = llm_config.get("temperature", 0.3)
+        max_tokens = llm_config.get("max_tokens", 1000)
+    else:
+        # フォールバック: デフォルトプロンプト
+        template = """あなたは PDF ドキュメント内容に基づいて質問に答える AI アシスタントです。
 
 【ルール】
 - 以下の「コンテキスト」の内容のみを根拠に答えてください
@@ -241,13 +276,21 @@ def rag_with_sources(query: str, k: int = 3) -> dict:
 
 【回答】
 """
+        model = "gpt-4o-mini"
+        temperature = 0.3
+        max_tokens = 1000
+
+    # プロンプトテンプレートを作成
+    prompt_template = PromptTemplate(
+        input_variables=["context", "question"],
+        template=template
     )
 
-    # LLM の初期化（OpenAI GPT-4o-mini を使用）
+    # LLM の初期化（YAML 設定に基づく）
     llm = ChatOpenAI(
-        model="gpt-4o-mini",
-        temperature=0.3,  # 回答の安定性を重視
-        max_tokens=1000
+        model=model,
+        temperature=temperature,
+        max_tokens=max_tokens
     )
 
     # LangChain パイプライン: prompt → llm → output_parser

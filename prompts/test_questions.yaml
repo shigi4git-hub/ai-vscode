@@ -1,0 +1,94 @@
+# テスト質問セット（5問）
+# RAG システムの評価に使用する質問と期待される回答のパターン
+
+test_questions:
+  
+  # 質問 1: 基本的なファクト抽出
+  question_01:
+    id: "Q001"
+    category: "basic_fact"
+    difficulty: "easy"
+    question: "このドキュメントの主要なトピックは何ですか？"
+    expected_answer_pattern: |
+      ドキュメントの主題に直接関連する内容を述べた回答。
+      具体的なトピック名称を含む。
+    evaluation_focus:
+      - accuracy: "主要トピックが正確に特定されているか"
+      - conciseness: "必要最小限の情報で述べられているか"
+      - evidence: "ドキュメント内の根拠が明確か"
+
+  # 質問 2: 複数情報の統合
+  question_02:
+    id: "Q002"
+    category: "information_synthesis"
+    difficulty: "medium"
+    question: "このドキュメントで説明されている主な概念や定義をまとめてください。"
+    expected_answer_pattern: |
+      複数の概念をリスト化または段落で整理した回答。
+      各概念の簡潔な説明を含む。
+    evaluation_focus:
+      - accuracy: "説明されている概念が正確か"
+      - conciseness: "簡潔にまとめられているか"
+      - evidence: "複数の引用元から根拠を示しているか"
+
+  # 質問 3: 具体的な詳細情報の検索
+  question_03:
+    id: "Q003"
+    category: "specific_detail"
+    difficulty: "medium"
+    question: "ドキュメントで最も詳しく説明されているセクションはどこですか？その内容を簡潔に説明してください。"
+    expected_answer_pattern: |
+      特定のセクション名と、その内容の簡潔な説明。
+      ページ番号や見出しを含む可能性。
+    evaluation_focus:
+      - accuracy: "最も詳しいセクションが正確に特定されているか"
+      - conciseness: "説明が適切な長さか"
+      - evidence: "ページ情報などで根拠を示しているか"
+
+  # 質問 4: 比較・対比
+  question_04:
+    id: "Q004"
+    category: "comparison"
+    difficulty: "hard"
+    question: "ドキュメント内で異なる観点や方法が比較されていますか？それらの違いを説明してください。"
+    expected_answer_pattern: |
+      複数の観点/方法の比較。
+      違いを明確に構造化した説明。
+      比較が存在しない場合は「記載されていない」と明確に答える。
+    evaluation_focus:
+      - accuracy: "比較が正確に述べられているか"
+      - conciseness: "対比が明確で簡潔か"
+      - evidence: "各観点の根拠が示されているか"
+
+  # 質問 5: 範囲外の質問への対応
+  question_05:
+    id: "Q005"
+    category: "out_of_scope"
+    difficulty: "hard"
+    question: "このドキュメント以外で一般的に知られている情報で、ここに記載されていないことはありますか？"
+    expected_answer_pattern: |
+      ドキュメントに記載されていない情報については
+      「わかりません」「記載されていません」と明確に答える回答。
+      推測や外部知識による補足は避ける。
+    evaluation_focus:
+      - accuracy: "範囲外の情報を答えていないか"
+      - conciseness: "回答が簡潔か"
+      - evidence: "ドキュメント内容に厳密に従っているか"
+
+# テストセットのメタデータ
+metadata:
+  version: "1.0"
+  created_date: "2026-01-01"
+  total_questions: 5
+  languages: ["ja"]
+  description: "RAG システムの多角的な評価を目的とした 5 問のテストセット"
+  difficulty_distribution:
+    easy: 1
+    medium: 2
+    hard: 2
+  category_distribution:
+    basic_fact: 1
+    information_synthesis: 1
+    specific_detail: 1
+    comparison: 1
+    out_of_scope: 1

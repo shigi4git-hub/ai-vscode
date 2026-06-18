@@ -1,0 +1,122 @@
+# 評価観点の定義
+# RAG システムの応答品質を評価するための基準
+
+evaluation_criteria:
+  
+  # 1. 正確性（Accuracy）
+  accuracy:
+    name: "正確性"
+    description: "回答が PDF ドキュメントの内容と一致しているか、誤りがないか"
+    metrics:
+      - metric_name: "Factual Correctness"
+        description: "記述されている事実が正確であるか"
+        scale: 1-5
+        criteria:
+          - level: 5
+            description: "完全に正確で、誤りがない"
+          - level: 4
+            description: "ほぼ正確だが、細かい詳細が不足している可能性"
+          - level: 3
+            description: "基本的には正確だが、部分的に曖昧"
+          - level: 2
+            description: "重大な誤りがいくつか含まれている"
+          - level: 1
+            description: "回答の大部分が誤っている、または不適切"
+      - metric_name: "Source Adherence"
+        description: "提供されたコンテキストに厳密に従っているか"
+        scale: 1-5
+        criteria:
+          - level: 5
+            description: "コンテキスト内容のみで構成"
+          - level: 4
+            description: "大部分はコンテキストベース、わずかに推測あり"
+          - level: 3
+            description: "コンテキストと推測が混在"
+          - level: 2
+            description: "コンテキスト外の情報が多い"
+          - level: 1
+            description: "コンテキスト外の情報がほとんど"
+
+  # 2. 簡潔性（Conciseness）
+  conciseness:
+    name: "簡潔性"
+    description: "回答が必要最小限の長さで、余分な情報がないか"
+    metrics:
+      - metric_name: "Length Appropriateness"
+        description: "質問に対して適切な長さの回答となっているか"
+        scale: 1-5
+        criteria:
+          - level: 5
+            description: "簡潔で、必要な情報をすべて含む"
+          - level: 4
+            description: "やや冗長だが、内容は良好"
+          - level: 3
+            description: "適度な長さだが、若干の冗長性あり"
+          - level: 2
+            description: "明らかに冗長で、削除可能な部分が多い"
+          - level: 1
+            description: "非常に冗長で、主要情報を見つけづらい"
+      - metric_name: "Relevance Ratio"
+        description: "回答内容のうち、質問に関連する情報の割合"
+        scale: 1-5
+        criteria:
+          - level: 5
+            description: "すべての内容が関連（95-100%）"
+          - level: 4
+            description: "ほぼすべてが関連（80-95%）"
+          - level: 3
+            description: "大部分が関連（60-80%）"
+          - level: 2
+            description: "半分程度が関連（40-60%）"
+          - level: 1
+            description: "関連性が低い（40%未満）"
+
+  # 3. 根拠（Evidence）
+  evidence:
+    name: "根拠"
+    description: "回答が十分なサポート情報・引用元を備えているか"
+    metrics:
+      - metric_name: "Citation Quality"
+        description: "引用元情報の提示と具体性"
+        scale: 1-5
+        criteria:
+          - level: 5
+            description: "複数の明確な引用元を提示"
+          - level: 4
+            description: "具体的な引用元を提示"
+          - level: 3
+            description: "引用元を提示しているが、やや曖昧"
+          - level: 2
+            description: "引用元が不十分で、根拠が弱い"
+          - level: 1
+            description: "引用元がない、または不適切"
+      - metric_name: "Context Completeness"
+        description: "質問に答えるのに必要な背景情報が含まれているか"
+        scale: 1-5
+        criteria:
+          - level: 5
+            description: "十分な背景情報で完全に理解可能"
+          - level: 4
+            description: "ほぼ十分な背景情報を含む"
+          - level: 3
+            description: "基本的な背景情報は含むが、不足あり"
+          - level: 2
+            description: "背景情報が不足して理解しづらい"
+          - level: 1
+            description: "背景情報がなく、孤立した情報"
+
+# スコアリング方式
+scoring:
+  method: "weighted_average"  # 評価方法
+  weights:
+    accuracy: 0.4       # 正確性: 40%
+    conciseness: 0.3    # 簡潔性: 30%
+    evidence: 0.3       # 根拠: 30%
+  
+  # 最終スコアの判定基準
+  interpretation:
+    excellent: "4.5-5.0"
+    good: "3.5-4.5"
+    fair: "2.5-3.5"
+    poor: "1.5-2.5"
+    unacceptable: "1.0-1.5"
