@@ -1,0 +1,4 @@
+Prompt_Version,Prompt_File,Total_Questions,Successful,Failed,Avg_Accuracy_Score,Var_Accuracy_Score,Avg_Conciseness_Score,Var_Conciseness_Score,Avg_Evidence_Score,Var_Evidence_Score,Avg_Overall_Score,Var_Overall_Score
+v1,qa_prompt_v1.yaml,5,5,0,3.5,0.1,2.9,1.24,4.0,0.0,3.47,0.1156
+v2,qa_prompt_v2.yaml,5,5,0,3.5,0.1,3.5,1.5,4.0,0.0,3.65,0.151
+v3,qa_prompt_v3.yaml,5,5,0,3.4,0.14,4.0,1.0,4.0,0.0,3.76,0.1004

@@ -210,7 +210,7 @@ def load_faiss_index() -> FAISS:
 # ─────────────────────────────────────────────────────────
 # 6. RAG での回答生成（引用元情報付き）
 # ─────────────────────────────────────────────────────────
-def rag_with_sources(query: str, k: int = 3) -> dict:
+def rag_with_sources(query: str, k: int = 3, prompt_yaml_path: Path = None) -> dict:
     """
     質問に対して RAG により回答を生成し、引用元の chunk 情報を含めて返す。
     プロンプトテンプレートは YAML ファイルから読み込む。
@@ -250,7 +250,9 @@ def rag_with_sources(query: str, k: int = 3) -> dict:
 
     # ステップ 4: YAML からプロンプトテンプレートを読み込む
     # YAML が見つからない場合は、デフォルトのプロンプトを使用
-    prompt_config = load_qa_prompt_yaml(QA_PROMPT_YAML)
+    # 引数で指定があればそれを使い、未指定時は従来どおり v1 を使う
+    selected_prompt_yaml = prompt_yaml_path or QA_PROMPT_YAML
+    prompt_config = load_qa_prompt_yaml(selected_prompt_yaml)
     
     if prompt_config:
         # YAML からテンプレートと LLM パラメータを取得
