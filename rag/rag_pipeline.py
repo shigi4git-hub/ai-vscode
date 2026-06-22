@@ -23,6 +23,9 @@ from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 
+# トークン使用状況ロギング用のインポート
+from app.services.token_logger import log_token_usage, generate_request_id
+
 # ─────────────────────────────────────────────────────────
 # 0. 環境変数の読み込み
 # ─────────────────────────────────────────────────────────
@@ -295,14 +298,51 @@ def rag_with_sources(query: str, k: int = 3, prompt_yaml_path: Path = None) -> d
         max_tokens=max_tokens
     )
 
-    # LangChain パイプライン: prompt → llm → output_parser
-    chain = prompt_template | llm | StrOutputParser()
+    # リクエストIDを生成（トークンログ用）
+    request_id = generate_request_id()
 
-    # LLM に質問を投げて回答を生成
-    answer = chain.invoke({
+    # プロンプトを組み立て
+    formatted_prompt = prompt_template.invoke({
         "context": context_text,
         "question": query
     })
+
+    # LLM に質問を投げて回答を生成
+    # レスポンスオブジェクトを取得してトークン使用情報を抽出できるようにする
+    response = llm.invoke(formatted_prompt)
+
+    # レスポンスからテキストを抽出
+    answer = response.content if hasattr(response, 'content') else str(response)
+
+    # トークン使用情報をログに記録
+    # ログ記録失敗はQA処理自体に影響させない
+    try:
+        if hasattr(response, 'usage_metadata') and response.usage_metadata:
+            # LangChain v0.1+: usage_metadata から情報を取得
+            input_tokens = response.usage_metadata.get('input_tokens', 0)
+            output_tokens = response.usage_metadata.get('output_tokens', 0)
+        elif hasattr(response, 'response_metadata') and response.response_metadata:
+            # 代替: response_metadata から取得
+            usage = response.response_metadata.get('usage', {})
+            input_tokens = usage.get('prompt_tokens', 0)
+            output_tokens = usage.get('completion_tokens', 0)
+        else:
+            # usage情報が取得できない場合はログを記録しない
+            input_tokens = None
+            output_tokens = None
+
+        # トークン情報が取得できた場合のみログに記録
+        if input_tokens is not None and output_tokens is not None:
+            log_token_usage(
+                request_id=request_id,
+                operation="qa",
+                model=model,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+            )
+    except Exception as log_exc:
+        # トークンログ記録失敗時はエラーログに記録するが、処理は継続
+        print(f"[WARNING] トークン使用状況の記録に失敗しました: {log_exc}")
 
     # ステップ 5: 引用元情報を整理（source, page, 内容プレビュー）
     sources = []

@@ -10,6 +10,9 @@ import os
 from dotenv import load_dotenv
 from openai import OpenAI
 
+# トークン使用状況ロギング用のインポート
+from app.services.token_logger import log_token_usage, generate_request_id
+
 # .env ファイルをプロジェクトルートから読み込む（既にロード済みでも安全に再呼び出し可）
 load_dotenv()
 
@@ -44,6 +47,9 @@ def summarize_text(text: str, max_chars: int = 150) -> str | None:
         logger.warning("OPENAI_API_KEY が設定されていないため要約をスキップします。")
         return None
 
+    # リクエストIDを生成（トークンログ用）
+    request_id = generate_request_id()
+
     try:
         response = _client.chat.completions.create(
             model="gpt-4o-mini",  # 軽量・低コストモデルを使用
@@ -66,6 +72,36 @@ def summarize_text(text: str, max_chars: int = 150) -> str | None:
         )
         # 生成されたテキストを取り出して前後の空白を除去する
         summary = response.choices[0].message.content
+
+        # APIレスポンスからトークン使用情報を取得してログに記録
+        # トークンログの失敗は要約処理自体には影響させない
+        try:
+            if response.usage:
+                # レスポンスオブジェクトからモデル名とトークン数を抽出
+                model_name = response.model
+                input_tokens = response.usage.prompt_tokens
+                output_tokens = response.usage.completion_tokens
+
+                # トークン使用状況をCSVに記録
+                log_token_usage(
+                    request_id=request_id,
+                    operation="summarize",
+                    model=model_name,
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
+                )
+                logger.debug(
+                    "トークン使用状況を記録しました: "
+                    "request_id=%s, model=%s, input=%d, output=%d",
+                    request_id,
+                    model_name,
+                    input_tokens,
+                    output_tokens,
+                )
+        except Exception as log_exc:
+            # トークンログ記録失敗時はエラーログに記録するが、処理は継続
+            logger.warning("トークン使用状況の記録に失敗しました: %s", log_exc)
+
         return summary.strip() if summary else None
 
     except Exception as exc:

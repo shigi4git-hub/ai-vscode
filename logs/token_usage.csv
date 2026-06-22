@@ -1,0 +1,3 @@
+timestamp,request_id,operation,model,input_tokens,output_tokens,total_tokens
+2026-06-22T10:05:57.771710,49b91cb8-1c9a-4b87-b612-f5c4e4c4e859,summarize,gpt-4o-mini-2024-07-18,54,9,63
+2026-06-22T10:09:24.098841,8597dcef-e35e-4622-8c72-96916a73e3d2,qa,gpt-4o-mini,902,161,1063
