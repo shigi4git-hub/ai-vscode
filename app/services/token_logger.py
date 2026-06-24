@@ -101,3 +101,97 @@ def log_token_usage(
             'output_tokens': output_tokens,
             'total_tokens': total_tokens
         })
+
+
+def log_feedback_loop(
+    request_id: str,
+    question: str,
+    prompt_type: str,
+    prompt_content: str,
+    answer: str,
+    rating: str,
+    loop_count: int,
+    input_tokens: int,
+    output_tokens: int
+) -> None:
+    """
+    フィードバックループの質問・回答・評価ログをCSVファイルに記録する
+    
+    logsディレクトリが存在しない場合は自動作成します。
+    feedback_loop_log.csvファイルが存在しない場合はヘッダー付きで新規作成します。
+    
+    Args:
+        request_id (str): リクエストの一意識別子
+        question (str): ユーザーから送信された質問テキスト
+        prompt_type (str): 使用したプロンプトタイプ（"normal" または "retry"）
+        prompt_content (str): 実際に使用したプロンプトの内容（テンプレート部分）
+        answer (str): AIが生成した回答テキスト
+        rating (str): ユーザーによる評価（"good" または "bad"）
+        loop_count (int): フィードバックループの回数（0=初回, 1=1回目の再質問, ...）
+        input_tokens (int): 入力トークン数
+        output_tokens (int): 出力トークン数
+    
+    Example:
+        >>> log_feedback_loop(
+        ...     request_id="123e4567-e89b-12d3-a456-426614174000",
+        ...     question="FastAPIの特徴は？",
+        ...     prompt_type="normal",
+        ...     prompt_content="あなたはPDFドキュメント...",
+        ...     answer="FastAPIは型検証と自動ドキュメント...",
+        ...     rating="good",
+        ...     loop_count=0,
+        ...     input_tokens=150,
+        ...     output_tokens=80
+        ... )
+    """
+    # logsディレクトリが存在しない場合は作成
+    LOGS_DIR.mkdir(exist_ok=True)
+    
+    # CSVファイルのパス
+    csv_path = LOGS_DIR / "feedback_loop_log.csv"
+    
+    # 現在時刻をISO形式のタイムスタンプとして取得
+    timestamp = datetime.now().isoformat()
+    
+    # 合計トークン数を計算
+    total_tokens = input_tokens + output_tokens
+    
+    # ファイルが存在するかチェック（ヘッダー書き込みの判定用）
+    file_exists = csv_path.exists()
+    
+    # CSVファイルを追記モードで開く
+    with open(csv_path, mode='a', newline='', encoding='utf-8-sig') as csvfile:
+        # フィールド定義
+        fieldnames = [
+            'timestamp',
+            'request_id',
+            'question',
+            'prompt_type',
+            'prompt_content',
+            'answer',
+            'rating',
+            'loop_count',
+            'input_tokens',
+            'output_tokens',
+            'total_tokens'
+        ]
+        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+        
+        # ファイルが新しい場合はヘッダーを書き込む
+        if not file_exists:
+            writer.writeheader()
+        
+        # データ行を書き込む
+        writer.writerow({
+            'timestamp': timestamp,
+            'request_id': request_id,
+            'question': question,
+            'prompt_type': prompt_type,
+            'prompt_content': prompt_content,
+            'answer': answer,
+            'rating': rating,
+            'loop_count': loop_count,
+            'input_tokens': input_tokens,
+            'output_tokens': output_tokens,
+            'total_tokens': total_tokens
+        })
